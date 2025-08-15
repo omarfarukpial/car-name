@@ -1,0 +1,742 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Text Path Car</title>
+			<script type="importmap">
+				{
+					"imports": {
+						"three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+					}
+				}
+			</script>
+		<style>
+			:root { --ui-h: 64px; }
+			html, body {
+				margin: 0;
+				padding: 0;
+				height: 100%;
+				/* Layered, non-repeating gradient background (no images) */
+				background:
+					radial-gradient(1200px 800px at 20% 10%, rgba(99,102,241,0.30), rgba(99,102,241,0) 60%),
+					radial-gradient(1000px 700px at 85% 20%, rgba(34,211,238,0.30), rgba(34,211,238,0) 60%),
+					radial-gradient(900px 600px at 50% 90%, rgba(236,72,153,0.22), rgba(236,72,153,0) 55%),
+					linear-gradient(180deg, #0b1020 0%, #0a0f1a 35%, #080d17 100%);
+				background-repeat: no-repeat;
+				overflow: hidden;
+				font-family: system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+			}
+			#ui {
+				position: absolute;
+				top: 12px;
+				left: 12px;
+				display: flex;
+				gap: 8px;
+				align-items: center;
+				background: rgba(0,0,0,0.45);
+				padding: 10px 12px;
+				border-radius: 10px;
+				backdrop-filter: blur(6px);
+				color: #e8f0ff;
+				z-index: 10;
+			}
+			#textInput {
+				width: 240px;
+				padding: 8px 10px;
+				border: 1px solid rgba(255,255,255,0.2);
+				border-radius: 8px;
+				background: rgba(255,255,255,0.08);
+				color: #fff;
+				outline: none;
+			}
+			#drawBtn {
+				padding: 8px 14px;
+				border: none;
+				border-radius: 8px;
+				background: #2d6bff;
+				color: white;
+				cursor: pointer;
+				font-weight: 600;
+			}
+			#drawBtn:hover { background: #1f57e6; }
+			/* Zoom controls: fixed bottom-right, horizontal */
+			#zoomBar {
+				position: fixed;
+				right: 16px;
+				bottom: 16px;
+				display: flex;
+				gap: 10px;
+				z-index: 12;
+			}
+			#zoomInBtn, #zoomOutBtn {
+				padding: 8px 12px;
+				border: 1px solid rgba(255,255,255,0.12);
+				border-radius: 10px;
+				background: rgba(15, 23, 42, 0.9);
+				backdrop-filter: blur(6px);
+				color: #e8f0ff;
+				cursor: pointer;
+				font-weight: 700;
+				width: 44px;
+				height: 44px;
+				line-height: 1;
+				touch-action: manipulation;
+				box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+			}
+			#zoomInBtn:hover, #zoomOutBtn:hover { background: rgba(15, 23, 42, 1); }
+			#hint {
+				position: absolute;
+				left: 12px;
+				bottom: 12px;
+				color: #bcd1ff;
+				font-size: 12px;
+				opacity: 0.85;
+				background: rgba(0,0,0,0.35);
+				padding: 6px 8px;
+				border-radius: 6px;
+			}
+
+			/* Mobile optimizations */
+			@media (max-width: 600px) {
+				#ui {
+					position: fixed;
+					left: max(8px, env(safe-area-inset-left));
+					right: max(8px, env(safe-area-inset-right));
+					bottom: max(8px, env(safe-area-inset-bottom));
+					top: auto;
+					gap: 8px;
+					padding: 10px 12px;
+					border-radius: 14px;
+					flex-wrap: nowrap;
+					align-items: center;
+					min-height: var(--ui-h);
+				}
+				#textInput {
+					width: auto;
+					min-width: 0;
+					flex: 1 1 60vw;
+					padding: 12px 14px;
+					font-size: 17px;
+					border-radius: 14px;
+					border: 1px solid rgba(255,255,255,0.28);
+					background: linear-gradient(180deg, rgba(255,255,255,0.16), rgba(255,255,255,0.08));
+					box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 24px rgba(0,0,0,0.35);
+					caret-color: #7dd3fc;
+				}
+				#textInput::placeholder { color: rgba(255,255,255,0.7); }
+				#textInput:focus {
+					outline: none;
+					border-color: #60a5fa;
+					box-shadow: 0 0 0 3px rgba(96,165,250,0.35), inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 24px rgba(0,0,0,0.35);
+				}
+				#drawBtn { padding: 10px 14px; font-size: 15px; }
+				#zoomBar { right: calc(12px + env(safe-area-inset-right)); bottom: calc(var(--ui-h) + 35px + env(safe-area-inset-bottom)); }
+				#zoomInBtn, #zoomOutBtn { font-size: 20px; }
+				#hint { left: max(8px, env(safe-area-inset-left)); bottom: max(8px, env(safe-area-inset-bottom)); font-size: 11px; }
+			}
+		</style>
+	</head>
+	<body>
+		<!-- UI: Text input and draw button -->
+		<div id="ui">
+				<input id="textInput" type="text" maxlength="24" placeholder="Type letters e.g. NAME" value="NAME" enterkeyhint="go" />
+			<button id="drawBtn">Draw</button>
+		</div>
+		<div id="zoomBar" aria-label="Zoom controls">
+			<button id="zoomInBtn" title="Zoom In">+</button>
+			<button id="zoomOutBtn" title="Zoom Out">-</button>
+		</div>
+
+		<!-- Three.js App (single-file, JS only via ESM imports) -->
+			<script type="module">
+				// Import Three.js and helpers from CDN (ESM). Examples import 'three' internally; import map resolves it.
+				import * as THREE from 'three';
+			import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+			import { GLTFLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
+			import { FontLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/FontLoader.js';
+
+			// URLs for assets (fonts, car models, textures). Using CORS-friendly sources where possible.
+			const FONT_URL = 'https://unpkg.com/three@0.160.0/examples/fonts/helvetiker_regular.typeface.json';
+			const CAR_URLS = [
+				// A couple of known glTF sample models that are vehicles or vehicle-like.
+				'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/CesiumMilkTruck/glTF-Binary/CesiumMilkTruck.glb',
+				'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Fox/glTF-Binary/Fox.glb' // a fallback animated model to prove pipeline
+			];
+			const GRASS_URL = 'https://threejs.org/examples/textures/terrain/grasslight-big.jpg';
+			const ASPHALT_URL = 'https://threejs.org/examples/textures/floors/FloorsCheckerboard_S_Diffuse.jpg';
+
+			// Basic mobile detection (UA or small viewport)
+			const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (Math.min(window.innerWidth, window.innerHeight) <= 600);
+
+			// Core globals
+			let renderer, scene, camera, controls, clock;
+			let world, ground;
+
+			// Car and motion
+			let car;              // THREE.Group
+			let carBody;          // Mesh to bob slightly
+			let carWheels = [];   // Array of wheel meshes (if available)
+			let usingFallbackCar = false;
+
+			// Path + trail
+			let font;
+			let pathPoints = [];        // All points of the text path (Vector3)
+			let pathCurve;              // CatmullRomCurve3 based on points
+			let totalPathLength = 0;    // Approx length
+			let progressIdx = 0;        // Index into pathPoints (integer stepping)
+			let speed = 12;             // Units per second along path (adjustable)
+			let visitedCount = 0;       // How many points are currently visited (for trail growth)
+			let trailLine;              // THREE.Line showing the glowing path so far
+			let trailTube;              // THREE.Mesh TubeGeometry for thicker glow (rebuilt occasionally)
+			const trailColor = new THREE.Color(0x22d3ee);
+
+			// Camera config: static top-down view (no dynamic follow)
+			const STATIC_TOP_VIEW = true;
+			const followOffset = new THREE.Vector3(0, 18, 36); // kept for optional follow mode
+			let baseHeight = 100; // base camera height computed from path size
+			let zoomMul = 1.0;    // zoom multiplier controlled by + / -
+			let pathBounds; // THREE.Sphere to represent overall path size for framing
+
+			const ui = {
+				input: document.getElementById('textInput'),
+				draw: document.getElementById('drawBtn'),
+				zoomIn: document.getElementById('zoomInBtn'),
+				zoomOut: document.getElementById('zoomOutBtn'),
+			};
+
+			// Init app
+			init();
+
+			async function init() {
+				clock = new THREE.Clock();
+
+				renderer = new THREE.WebGLRenderer({ antialias: !isMobile, alpha: true });
+				renderer.outputColorSpace = THREE.SRGBColorSpace;
+				renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.5 : 2));
+				renderer.setSize(window.innerWidth, window.innerHeight);
+				renderer.setClearAlpha(0);
+				renderer.shadowMap.enabled = true;
+				document.body.appendChild(renderer.domElement);
+
+				scene = new THREE.Scene();
+				scene.background = null; // let CSS gradient show through
+
+				camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 2000);
+				camera.position.set(0, 25, 60);
+
+				controls = new OrbitControls(camera, renderer.domElement);
+				controls.enableDamping = true;
+				controls.maxPolarAngle = Math.PI * 0.49;
+				controls.target.set(0, 2, 0);
+				if (STATIC_TOP_VIEW) {
+					controls.enabled = false;
+				}
+
+				world = new THREE.Group();
+				scene.add(world);
+
+				setupLights();
+				await setupEnvironment();
+			try { await loadFont(); } catch (e) { console.error('Font load failed:', e); }
+			await loadCarWithFallback();
+
+				// Default path draw
+				generateAndStart(ui.input.value);
+
+				// UI events
+				ui.draw.addEventListener('click', () => {
+					const text = ui.input.value.trim() || 'HELLO';
+					generateAndStart(text);
+				});
+
+				ui.input.addEventListener('keydown', (e) => {
+					if (e.key === 'Enter') {
+						e.preventDefault();
+						ui.draw.click();
+					}
+				});
+
+				ui.zoomIn.addEventListener('click', () => adjustZoom(0.9));
+				ui.zoomOut.addEventListener('click', () => adjustZoom(1.1));
+
+				// Ensure zoom bar clears the mobile input bar height
+				setUiHeightVar();
+
+				window.addEventListener('resize', onResize);
+				window.addEventListener('keydown', (e) => {
+					if (e.key.toLowerCase() === 'r') resetCameraView();
+				});
+
+				animate();
+			}
+
+			// Lighting setup: hemisphere + directional sunlight with shadows
+			function setupLights() {
+				const hemi = new THREE.HemisphereLight(0xc5e8ff, 0x223322, 0.6);
+				scene.add(hemi);
+
+				const dir = new THREE.DirectionalLight(0xffffff, 1.0);
+				dir.position.set(-50, 100, 50);
+				dir.castShadow = true;
+				dir.shadow.mapSize.set(isMobile ? 1024 : 2048, isMobile ? 1024 : 2048);
+				dir.shadow.camera.left = -120;
+				dir.shadow.camera.right = 120;
+				dir.shadow.camera.top = 120;
+				dir.shadow.camera.bottom = -120;
+				scene.add(dir);
+			}
+
+			// Scenic environment: large textured ground + procedural sky
+			async function setupEnvironment() {
+				// Create a smooth, non-repeating gradient texture for the ground
+				const groundTex = createStunningGroundTexture(2048);
+				groundTex.wrapS = groundTex.wrapT = THREE.ClampToEdgeWrapping;
+				groundTex.anisotropy = isMobile ? 2 : 4;
+
+				const groundMat = new THREE.MeshStandardMaterial({
+					color: 0xffffff,
+					map: null, // keep the CSS gradient dominant
+					roughness: 1.0,
+					metalness: 0.0,
+					transparent: true,
+					opacity: 0.22,
+				});
+				const groundGeo = new THREE.PlaneGeometry(2000, 2000);
+				ground = new THREE.Mesh(groundGeo, groundMat);
+				ground.rotation.x = -Math.PI / 2;
+				ground.receiveShadow = true;
+				world.add(ground);
+
+				// No procedural sky/fog to keep the CSS background visible and vivid
+				scene.fog = null;
+			}
+
+			async function loadTextureSafe(loader, url) {
+				return new Promise((resolve) => {
+					loader.load(url, (t) => resolve(t), undefined, () => resolve(null));
+				});
+			}
+
+			// Build a colorful, soft-grid canvas texture for the ground
+			function createStunningGroundTexture(size = 2048) {
+				const canvas = document.createElement('canvas');
+				canvas.width = canvas.height = size;
+				const ctx = canvas.getContext('2d');
+
+				// Smooth radial gradient (center slightly brighter, edges darker)
+				const rg = ctx.createRadialGradient(size/2, size/2, size*0.1, size/2, size/2, size*0.8);
+				rg.addColorStop(0, '#0e1426');
+				rg.addColorStop(1, '#090f1a');
+				ctx.fillStyle = rg;
+				ctx.fillRect(0, 0, size, size);
+
+				const tex = new THREE.CanvasTexture(canvas);
+				tex.colorSpace = THREE.SRGBColorSpace;
+				tex.needsUpdate = true;
+				return tex;
+			}
+
+			// Load font to turn text into curves
+			async function loadFont() {
+				const loader = new FontLoader();
+				font = await new Promise((resolve, reject) => {
+					loader.load(
+						FONT_URL,
+						(f) => resolve(f),
+						undefined,
+						(err) => reject(err)
+					);
+				});
+			}
+
+			// Load a glTF car model; if it fails, build a placeholder car
+			async function loadCarWithFallback() {
+				const gltfLoader = new GLTFLoader();
+				for (const url of CAR_URLS) {
+					try {
+						const gltf = await new Promise((resolve, reject) => {
+							gltfLoader.load(url, resolve, undefined, reject);
+						});
+						car = gltf.scene || new THREE.Group();
+						car.scale.setScalar(0.2);
+						car.traverse((obj) => { if (obj.isMesh) { obj.castShadow = true; obj.receiveShadow = true; if (obj.material) obj.material.side = THREE.DoubleSide; } });
+						// Try to find wheels by name heuristics
+						carWheels = [];
+						car.traverse((obj) => {
+							if (obj.isMesh && /wheel|tyre|tire/i.test(obj.name)) carWheels.push(obj);
+						});
+						usingFallbackCar = false;
+						world.add(car);
+						carBody = findLargestMesh(car) || car;
+						if (carBody) carBody.userData.baseY = carBody.position.y;
+						return;
+					} catch (e) {
+						console.warn('Failed to load car model:', url, e);
+					}
+				}
+				// Fallback: build a simple stylized car
+				usingFallbackCar = true;
+				car = createPlaceholderCar();
+				world.add(car);
+					carBody = car.getObjectByName('CarBody') || car;
+					if (carBody) carBody.userData.baseY = carBody.position.y;
+			}
+
+			// Utility: find largest mesh to use as body for bobbing
+			function findLargestMesh(root) {
+				let largest = null, maxVol = 0;
+				root.traverse((obj) => {
+					if (obj.isMesh && obj.geometry) {
+						obj.geometry.computeBoundingBox();
+						const bb = obj.geometry.boundingBox;
+						const vol = (bb.max.x - bb.min.x) * (bb.max.y - bb.min.y) * (bb.max.z - bb.min.z);
+						if (vol > maxVol) { maxVol = vol; largest = obj; }
+					}
+				});
+				return largest;
+			}
+
+			// Build a simple car if a model isn't available
+			function createPlaceholderCar() {
+				const group = new THREE.Group();
+				group.name = 'FallbackCar';
+
+				// Body
+				const bodyMat = new THREE.MeshStandardMaterial({ color: 0x2030ff, metalness: 0.2, roughness: 0.4 });
+				const cabMat = new THREE.MeshStandardMaterial({ color: 0x6aa9ff, metalness: 0.1, roughness: 0.2 });
+				const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.3, roughness: 0.8 });
+
+				const body = new THREE.Mesh(new THREE.BoxGeometry(6, 1.2, 3.2), bodyMat);
+				body.castShadow = true; body.receiveShadow = true;
+				body.position.y = 1.2;
+				body.name = 'CarBody';
+				group.add(body);
+
+				const cabin = new THREE.Mesh(new THREE.BoxGeometry(3.5, 1.3, 2.6), cabMat);
+				cabin.position.set(-0.2, 2, 0);
+				cabin.castShadow = true; cabin.receiveShadow = true;
+				group.add(cabin);
+
+				// Wheels
+				const wheelGeo = new THREE.CylinderGeometry(0.6, 0.6, 0.6, 24);
+				wheelGeo.rotateZ(Math.PI / 2);
+				const wheelOffsets = [
+					[ 2.0, 0.6,  1.6], // FR
+					[ 2.0, 0.6, -1.6], // FL
+					[-2.0, 0.6,  1.6], // RR
+					[-2.0, 0.6, -1.6], // RL
+				];
+				carWheels = [];
+				for (let i = 0; i < 4; i++) {
+					const w = new THREE.Mesh(wheelGeo, wheelMat);
+					w.position.set(...wheelOffsets[i]);
+					w.castShadow = true; w.receiveShadow = true;
+					w.name = 'Wheel' + i;
+					group.add(w);
+					carWheels.push(w);
+				}
+
+				// Front bumper small detail
+				const bumper = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.4, 2.8), bodyMat);
+				bumper.position.set(3.3, 1.0, 0);
+				bumper.castShadow = true; bumper.receiveShadow = true;
+				group.add(bumper);
+
+				group.scale.setScalar(1.8);
+				return group;
+			}
+
+			// Camera framing helper (top-down when STATIC_TOP_VIEW)
+			function resetCameraView() {
+				if (!pathBounds) {
+					if (STATIC_TOP_VIEW) {
+						baseHeight = 100;
+						updateTopDownCamera();
+					} else {
+						camera.position.set(0, 25, 60);
+						controls.target.set(0, 2, 0);
+					}
+					return;
+				}
+				const r = pathBounds.radius;
+				if (STATIC_TOP_VIEW) {
+					// Compute a height that fits the whole text in view (mobile-first)
+					baseHeight = computeFitHeightFromPoints(pathPoints, camera, isMobile ? 1.25 : 1.15);
+					zoomMul = 1.0;
+					updateTopDownCamera();
+				} else {
+					const center = pathBounds.center;
+					camera.position.set(center.x + r * 1.8, Math.max(30, r * 1.1), center.z + r * 2.2);
+					controls.target.copy(center);
+					controls.update();
+				}
+			}
+
+			// Calculate perspective camera height to fit given points within viewport
+			function computeFitHeightFromPoints(points, cam, margin = 1.15) {
+				if (!points || points.length === 0) return 100;
+				const bbox = new THREE.Box3().setFromPoints(points);
+				const size = new THREE.Vector3();
+				bbox.getSize(size);
+				const fov = THREE.MathUtils.degToRad(cam.fov);
+				const halfV = Math.tan(fov / 2);
+				const neededV = (size.z * margin) / 2; // depth along Z
+				const neededH = (size.x * margin) / 2; // width along X
+				const hFromV = neededV / halfV;
+				const hFromH = (neededH / (halfV * cam.aspect));
+				return Math.max(60, hFromV, hFromH);
+			}
+
+			function updateTopDownCamera() {
+				const center = pathBounds ? pathBounds.center : new THREE.Vector3(0, 0, 0);
+				const height = baseHeight * zoomMul;
+				camera.position.set(center.x, height, center.z + 0.001);
+				camera.lookAt(center);
+			}
+
+			function adjustZoom(factor) {
+				zoomMul = Math.min(3.5, Math.max(0.3, zoomMul * factor));
+				if (STATIC_TOP_VIEW) updateTopDownCamera();
+			}
+
+			function onResize() {
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+				renderer.setSize(window.innerWidth, window.innerHeight);
+				renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.5 : 2));
+				setUiHeightVar();
+			}
+
+			// Update CSS var --ui-h to current #ui height (for mobile offsetting of #zoomBar)
+			function setUiHeightVar() {
+				const bar = document.getElementById('ui');
+				if (!bar) return;
+				const h = Math.ceil(bar.getBoundingClientRect().height || 0);
+				document.documentElement.style.setProperty('--ui-h', h + 'px');
+			}
+
+			// Generate path from text and start the animation
+			function generateAndStart(text) {
+				// Tear down previous trail/path
+				if (trailLine) { world.remove(trailLine); trailLine.geometry.dispose(); trailLine.material.dispose(); trailLine = undefined; }
+				if (trailTube) { world.remove(trailTube); trailTube.geometry.dispose(); trailTube.material.dispose(); trailTube = undefined; }
+
+			// Build path from text (with fallback if font not available)
+			const { points3, boundsSphere } = buildPathFromText(text, { size: 12, curveSegments: 12 });
+				pathPoints = points3;
+				pathBounds = boundsSphere;
+				pathCurve = new THREE.CatmullRomCurve3(points3, false, 'catmullrom', 0.1);
+				// Create a resample for smooth drive (lighter on mobile)
+				const samples = Math.max(isMobile ? 350 : 500, Math.ceil(points3.length * (isMobile ? 2.2 : 3)));
+				const resampled = pathCurve.getSpacedPoints(samples);
+				pathPoints = resampled;
+				totalPathLength = estimatePolylineLength(pathPoints);
+
+				// Place car at start
+				progressIdx = 0;
+				visitedCount = 1;
+				if (car) {
+					car.position.copy(pathPoints[0]);
+					alignCarToDirection(new THREE.Vector3().subVectors(pathPoints[1], pathPoints[0]));
+				}
+
+				// Create trail line (thin but glowing via additive blend)
+				trailLine = makeTrailLine(pathPoints);
+				world.add(trailLine);
+
+				// Build initial short tube segment
+				trailTube = makeTrailTube(pathPoints.slice(0, Math.max(2, visitedCount)));
+				world.add(trailTube);
+
+				// Frame camera nicely around new text
+				resetCameraView();
+			}
+
+					// Convert text into a single stitched path of Vector3 points
+			function buildPathFromText(text, { size = 10, curveSegments = 12 } = {}) {
+						if (!font) {
+							console.warn('Font not loaded; using fallback curve');
+							return buildFallbackCurve(text, size);
+						}
+				// Generate 2D shapes laid out proportionally like real text
+				const shapes = font.generateShapes(text, size, curveSegments);
+				// Convert shapes into polylines (outer contours + holes)
+				const points2D = [];
+				for (const s of shapes) {
+					const outer = s.getSpacedPoints(Math.max(12, size * 3));
+					points2D.push(outer);
+					if (s.holes && s.holes.length) {
+						for (const h of s.holes) points2D.push(h.getSpacedPoints(Math.max(10, size * 2)));
+					}
+				}
+				// Stitch all contours into one continuous route, connecting ends smoothly
+				const stitched = [];
+				let lastEnd = null;
+				for (const contour of points2D) {
+					if (contour.length < 2) continue;
+					if (lastEnd) {
+						// Connect previous end to new start with a tiny bridging segment
+						const start = contour[0];
+						const dx = start.x - lastEnd.x;
+						const dy = start.y - lastEnd.y;
+						const steps = Math.max(2, Math.ceil(Math.hypot(dx, dy) / Math.max(1, size * 0.2)));
+						for (let i = 1; i <= steps; i++) {
+							const t = i / steps;
+							stitched.push(new THREE.Vector2(lastEnd.x + dx * t, lastEnd.y + dy * t));
+						}
+					}
+					// Add the contour itself
+					for (const pt of contour) stitched.push(pt);
+					lastEnd = contour[contour.length - 1];
+				}
+
+				// Map 2D (x, y) to 3D ground plane (x, 0, -y), and center around origin
+				let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+				for (const p of stitched) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y); }
+				const centerX = (minX + maxX) / 2;
+				const centerY = (minY + maxY) / 2;
+
+				const points3 = stitched.map(v => new THREE.Vector3(v.x - centerX, 0.02, -(v.y - centerY)));
+
+				// Compute bounds sphere for framing
+				const bbox = new THREE.Box3().setFromPoints(points3);
+				const sphere = bbox.getBoundingSphere(new THREE.Sphere());
+				sphere.radius += 5;
+				return { points3, boundsSphere: sphere };
+			}
+
+					// Fallback curve if font fails: a Lissajous-like path scaled by text length
+					function buildFallbackCurve(text, size = 10) {
+						const chars = Math.max(1, (text || '').length);
+						const radius = 12 + Math.min(40, chars * 3);
+						const pts = [];
+						const steps = 800;
+						for (let i = 0; i <= steps; i++) {
+							const t = i / steps;
+							const a = t * Math.PI * 2;
+							const x = Math.cos(a * 1.0) * radius * 1.6;
+							const z = Math.sin(a * 1.5) * radius;
+							pts.push(new THREE.Vector3(x, 0.02, z));
+						}
+						const bbox = new THREE.Box3().setFromPoints(pts);
+						const sphere = bbox.getBoundingSphere(new THREE.Sphere());
+						sphere.radius += 5;
+						return { points3: pts, boundsSphere: sphere };
+					}
+
+			function estimatePolylineLength(points) {
+				let L = 0;
+				for (let i = 1; i < points.length; i++) L += points[i].distanceTo(points[i-1]);
+				return L;
+			}
+
+			// Thin glowing trail using a line; thick glow using a tube segment
+			function makeTrailLine(allPoints) {
+				const geom = new THREE.BufferGeometry().setFromPoints(allPoints);
+				geom.setDrawRange(0, 2); // start small, grow over time
+				const mat = new THREE.LineBasicMaterial({
+					color: trailColor,
+					transparent: true,
+					opacity: 0.9,
+					blending: THREE.AdditiveBlending,
+					depthWrite: false
+				});
+				const line = new THREE.Line(geom, mat);
+				line.position.y += 0.01;
+				return line;
+			}
+
+			function makeTrailTube(pts) {
+				const minPts = Math.max(2, pts.length);
+				const curve = new THREE.CatmullRomCurve3(pts.slice(-Math.max(8, minPts)));
+				const tubularSegments = Math.max(isMobile ? 12 : 16, Math.floor(pts.length * (isMobile ? 1.2 : 2)));
+				const tube = new THREE.TubeGeometry(curve, tubularSegments, isMobile ? 0.2 : 0.25, isMobile ? 6 : 8, false);
+				const mat = new THREE.MeshBasicMaterial({
+					color: trailColor,
+					transparent: true,
+					opacity: 0.35,
+					blending: THREE.AdditiveBlending,
+					depthWrite: false
+				});
+				const mesh = new THREE.Mesh(tube, mat);
+				mesh.renderOrder = 1;
+				return mesh;
+			}
+
+			function alignCarToDirection(dir) {
+				if (!car) return;
+				// Compute yaw to face dir in XZ plane
+				const yaw = Math.atan2(dir.x, dir.z);
+				car.rotation.set(0, yaw, 0);
+			}
+
+			// Main loop: move car, animate wheels/body, grow trail
+			function animate() {
+				requestAnimationFrame(animate);
+				const dt = Math.min(0.05, clock.getDelta());
+
+				// Move car along the computed path
+				if (pathPoints.length >= 2 && car) {
+					// Advance progress based on speed (units/sec) and segment size
+					const segmentSize = totalPathLength / Math.max(1, pathPoints.length - 1);
+					let step = Math.max(1, Math.floor((speed * dt) / Math.max(0.001, segmentSize)));
+					step = Math.min(step, 12); // clamp for stability
+
+					const prevIdx = progressIdx;
+					progressIdx = Math.min(pathPoints.length - 1, progressIdx + step);
+					const pPrev = pathPoints[prevIdx];
+					const pNow = pathPoints[progressIdx];
+
+					// Update car transform
+					car.position.copy(pNow);
+					const dir = new THREE.Vector3().subVectors(pNow, pPrev);
+					if (dir.lengthSq() > 1e-6) alignCarToDirection(dir);
+
+					// Wheel rotation based on distance traveled
+					const dist = pNow.distanceTo(pPrev);
+					const wheelRadius = usingFallbackCar ? 0.6 * car.scale.x : 0.35 * car.scale.x;
+					const deltaRot = (dist / Math.max(0.001, wheelRadius)) * 0.6;
+					for (const w of carWheels) { w.rotation.x -= deltaRot; }
+
+					// Body subtle bobbing
+								if (carBody) {
+									if (carBody.userData.baseY === undefined) carBody.userData.baseY = carBody.position.y;
+									const bob = Math.sin(performance.now() * 0.006) * 0.05;
+									carBody.position.y = carBody.userData.baseY + bob;
+								}
+
+					// Grow trail
+					visitedCount = Math.max(visitedCount, progressIdx + 1);
+					if (trailLine) trailLine.geometry.setDrawRange(0, visitedCount);
+
+					// Update thick tube less frequently for performance
+					if (trailTube && visitedCount % 4 === 0) {
+						const pts = pathPoints.slice(0, Math.max(2, visitedCount));
+						world.remove(trailTube);
+						trailTube.geometry.dispose(); trailTube.material.dispose();
+						trailTube = makeTrailTube(pts);
+						world.add(trailTube);
+					}
+				}
+
+				// Keep camera static in top-down mode; otherwise, follow car
+				if (!STATIC_TOP_VIEW && car && pathBounds) {
+					const desired = followOffset.clone().applyQuaternion(car.quaternion).add(car.position);
+					const heightBias = Math.max(20, pathBounds.radius * 0.8);
+					desired.y = Math.max(desired.y, car.position.y + heightBias);
+					camera.position.lerp(desired, 0.08);
+					const look = new THREE.Vector3().lerpVectors(car.position, pathBounds.center, 0.25);
+					controls.target.lerp(look, 0.12);
+					controls.update();
+				} else if (!STATIC_TOP_VIEW) {
+					controls.update();
+				}
+
+				renderer.render(scene, camera);
+			}
+
+		</script>
+	</body>
+	</html>
+

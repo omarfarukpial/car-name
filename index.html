@@ -39,7 +39,7 @@
 				border-radius: 0.625rem;
 				backdrop-filter: blur(6px);
 				color: #e8f0ff;
-				z-index: 10;
+				z-index: 100;
 			}
 			#textInput {
 				width: 15rem;
@@ -67,7 +67,7 @@
 				bottom: 1rem;
 				display: flex;
 				gap: 0.625rem;
-				z-index: 12;
+				z-index: 102;
 			}
 			#zoomInBtn, #zoomOutBtn {
 				padding: 0.5rem 0.75rem;
@@ -107,7 +107,7 @@
 				letter-spacing: 0.02em;
 				user-select: none;
 				pointer-events: none;
-				z-index: 9;
+				z-index: 99;
 			}
 
 			/* Mobile optimizations */
@@ -226,12 +226,25 @@
 			async function init() {
 				clock = new THREE.Clock();
 
-				renderer = new THREE.WebGLRenderer({ antialias: !isMobile, alpha: true });
+				renderer = new THREE.WebGLRenderer({ 
+					antialias: !isMobile, 
+					alpha: true,
+					premultipliedAlpha: false,
+					preserveDrawingBuffer: false
+				});
 				renderer.outputColorSpace = THREE.SRGBColorSpace;
 				renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.5 : 2));
 				renderer.setSize(window.innerWidth, window.innerHeight);
 				renderer.setClearAlpha(0);
 				renderer.shadowMap.enabled = true;
+				
+				// Ensure canvas doesn't interfere with background
+				renderer.domElement.style.position = 'fixed';
+				renderer.domElement.style.top = '0';
+				renderer.domElement.style.left = '0';
+				renderer.domElement.style.pointerEvents = 'auto';
+				renderer.domElement.style.zIndex = '1';
+				
 				document.body.appendChild(renderer.domElement);
 
 				scene = new THREE.Scene();
